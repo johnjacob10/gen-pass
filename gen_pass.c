@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2016 by John Jacob.
+ * This file is licensed under the GNU General Public License, version 3.
+ * http://www.gnu.org/licenses/gpl.txt
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
