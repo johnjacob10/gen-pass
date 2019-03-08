@@ -25,10 +25,6 @@
 /*
  * DEFINITIONS
  */
-#ifndef DEBUG                   /* compile with -DDEBUG=1 for debug logs */
-    #define DEBUG          0
-#endif
-
 #define HEX                16
 #define ESC                27
 
@@ -42,8 +38,11 @@
 #endif
 
 /*
- * This is sufficient to avoid most brute force attacks as of 2019. However,
- * note that changing this can change passwords and break compatibility.
+ * This is sufficient to avoid most brute force attacks as of 2019. This
+ * length can be increased in future to avoid future attacks with more
+ * powerful computing equipment. However, note that changing this value
+ * will change the password generated given the same input, and break
+ * compatibility.
  */
 #define PASS_LEN           29
 #define SYM_TAB_LEN        sizeof(def_sym_tab)
@@ -59,7 +58,6 @@
 /*
  * CONSTANTS
  */
-const unsigned int debug_enabled = DEBUG;
 
 /*
  * This is a list of password characters that are valid for the majority
@@ -90,6 +88,7 @@ char         * sym_tab       = (char *) def_sym_tab;
 unsigned int   sym_tab_len   = SYM_TAB_LEN;
 unsigned int   min_buf_chars = MIN_BUF_CHARS;
 WINDOW       * app_win       = NULL;
+bool           debug_enabled = false;
 
 /*
  * FORWARD DECLARATIONS
@@ -300,7 +299,8 @@ static int usage (char *progname)
     static const char *reqd = "[REQUIRED]";
     static const char *opt = "[OPTIONAL]";
     wprintw(app_win,
-            "Usage: %s [-n <offset>] [-a] [-s <code>] -f <file>\n", progname);
+            "Usage: %s [-v] [-n <offset>] [-a] [-s <code>] -f <file>\n",
+            progname);
     wprintw(app_win,
             "  -f : Path of the file to generate password from. %s\n", reqd);
     wprintw(app_win,
@@ -314,8 +314,9 @@ static int usage (char *progname)
     wprintw(app_win,
             "       This option may be repeated multiple times, and\n");
     wprintw(app_win,
-            "       its presence implies \"-s\".                  %s\n", opt);
-    
+            "       its presence implies \"-a\".                  %s\n", opt);
+    wprintw(app_win,
+            "  -v : This enables verbose output for debugging.  %s\n", opt); 
     return (OK);
 }
 
@@ -351,7 +352,7 @@ static int process_args (int argc, char *argv[], char *fname, off_t *offset)
     long long number;
     long double complexity;
 
-    while ((user_opt = getopt(argc, argv, "n:s:f:a")) != -1) {
+    while ((user_opt = getopt(argc, argv, "n:s:f:av")) != -1) {
         switch (user_opt) {
             case 'f':
             infile = optarg;
@@ -377,6 +378,10 @@ static int process_args (int argc, char *argv[], char *fname, off_t *offset)
 
             case 'a':
             full_charset = false;
+            break;
+
+            case 'v':
+            debug_enabled = true;
             break;
 
             case 's':
@@ -409,6 +414,11 @@ static int process_args (int argc, char *argv[], char *fname, off_t *offset)
                             "not supported.\n", special_char, optarg);
                     return (ERR);
                 }
+            } else {
+                wprintw(app_win,
+                        "Error: The special character \"%s\" is not valid.\n",
+                        optarg);
+                return (ERR);
             }
             break;
             
@@ -514,7 +524,7 @@ static int term_setup (void)
         wtimeout(app_win, -1);
         notimeout(app_win, false);
         nodelay(app_win, false);
-        
+        ret = OK;        
     }
     return (ret);
 }

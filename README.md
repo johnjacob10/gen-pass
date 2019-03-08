@@ -9,6 +9,9 @@ Usage: gen_pass [-n <offset>] [-a] [-s <code>] -f <file>
        code, in addition to alpha-numeric characters.
        This option may be repeated multiple times, and
        its presence implies "-a".                  [OPTIONAL]
+  -v : This option directs gen_pass to generate verbose
+       output. This is useful for developers.      [OPTIONAL]
+
 The "-a" option can be used to generate a password with alphanumeric characters only. Such a password will have less entropy than a password with alphanumeric and special characters. The "-s" option allows the generation of a password with alphanumeric characters and a special character specified by numeric ASCII code. This option can be used multiple times to add multiple special characters to the password. This is useful for websites that allow a certain restricted set of special characters in addition to alphanumeric characters in passwords. The complete set of special characters that can be added by using the "-s" option are shown below.
 ! 33   " 34   # 35   $ 36   % 37   & 38   ' 39   ( 40   ) 41   * 42   + 43
 , 44   - 45   . 46   / 47   : 58   ; 59   < 60   = 61   > 62   ? 63   @ 64
