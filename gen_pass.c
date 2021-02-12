@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019 by John Jacob.
+ * Copyright (c) 2016-2021 by John Jacob.
  * This file is licensed under the GNU General Public License, version 3.
  * http://www.gnu.org/licenses/gpl.txt
  */
@@ -48,6 +48,10 @@
 #define SYM_TAB_LEN        sizeof(def_sym_tab)
 /* This is sufficient for the input data to have good entropy. */
 #define BUF_LEN            1024
+/* /dev/urandom is incompressible. So this is suffient for entropy */
+#define URANDOM_BUF_LEN    32
+#define RANDOM_DEVICE      "/dev/urandom"
+
 /*
  * MIN_BUF_CHARS is the smallest number that satisfies the inequality
  * 2^(MIN_BUF_CHARS*8) > SYM_TAB_LEN^PASS_LEN
@@ -87,6 +91,7 @@ const char def_sym_tab[] = {
 char         * sym_tab       = (char *) def_sym_tab;
 unsigned int   sym_tab_len   = SYM_TAB_LEN;
 unsigned int   min_buf_chars = MIN_BUF_CHARS;
+unsigned int   pass_len      = PASS_LEN;
 WINDOW       * app_win       = NULL;
 bool           debug_enabled = false;
 
@@ -106,7 +111,8 @@ static int get_file_len (int fdesc, off_t *len)
     return (OK);
 }
 
-static int read_file_data (FILE *fdesc, char *buf, off_t offset)
+static int read_file_data (FILE *fdesc, char *buf, unsigned int buf_len,
+                           off_t offset)
 {
     if ((fdesc == NULL) || (buf == NULL)) {
         return (ERR);
@@ -116,7 +122,7 @@ static int read_file_data (FILE *fdesc, char *buf, off_t offset)
         return (ERR);
     }        
 
-    if (fread(buf, BUF_LEN, 1, fdesc) < 1) {
+    if (fread(buf, buf_len, 1, fdesc) < 1) {
         return (ERR);
     }
 
@@ -299,12 +305,24 @@ static int usage (char *progname)
     static const char *reqd = "[REQUIRED]";
     static const char *opt = "[OPTIONAL]";
     wprintw(app_win,
-            "Usage: %s [-v] [-n <offset>] [-a] [-s <code>] -f <file>\n",
+            "Usage: %s [-v] [-n <offset>] [-a] [-s <code>] <-f <file>|-r>\n",
             progname);
     wprintw(app_win,
             "  -f : Path of the file to generate password from. %s\n", reqd);
     wprintw(app_win,
+            "  -r : Use /dev/urandom instead of a file.         %s\n", reqd);
+    wprintw(app_win,
+            "         .. One of -f and -r are required, but both\n");
+    wprintw(app_win,
+            "         .. of these options can't be used together.\n");
+    wprintw(app_win,
             "  -n : Offset within the file.                     %s\n", opt);
+    wprintw(app_win,
+            "-l : Generate password of the given length.        %s\n", opt);
+    wprintw(app_win,
+            "         .. Use this if you need a password longer\n");
+    wprintw(app_win,
+            "         .. than the default 29 characters.\n");
     wprintw(app_win,
             "  -a : Generate alpha-numeric characters only.     %s\n", opt);
     wprintw(app_win,
@@ -345,6 +363,7 @@ static int process_args (int argc, char *argv[], char *fname, off_t *offset)
         {'?', false} /* 63 */,  {',', false}  /* 44 */,
         {'.', false} /* 46 */,  {'/', false}  /* 47 */
     };
+    static const char * const random_file = { RANDOM_DEVICE };
     char user_opt, special_char, *infile = NULL, *invptr = NULL,
          *custom_symtab = NULL;
     bool full_charset = true, found;
@@ -352,13 +371,44 @@ static int process_args (int argc, char *argv[], char *fname, off_t *offset)
     long long number;
     long double complexity;
 
-    while ((user_opt = getopt(argc, argv, "n:s:f:av")) != -1) {
+    while ((user_opt = getopt(argc, argv, "n:l:s:f:rav")) != -1) {
         switch (user_opt) {
             case 'f':
-            infile = optarg;
+            if (infile == NULL) {
+                infile = optarg;
+            } else {
+                if (infile == random_file) {
+                    wprintw(app_win, "Error: Input file (%s) and random device "
+                            "are both specified. Only one of -f and -r may be "
+                            "used at a time.\n", optarg);
+                } else {
+                    wprintw(app_win, "Error: Duplicate input files (%s and %s) "
+                            "specified. The -f option can only be used once.\n",
+                            optarg, infile);
+                }
+            }
+            break;
+
+            case 'r':
+            if (infile == NULL) {
+                infile = (char *) random_file;
+            } else {
+                if (infile == random_file) {
+                    wprintw(app_win, "Error: Option -r has been specified more "
+                            "than once.\n");
+                } else {
+                    wprintw(app_win, "Error: Input file (%s) and random device "
+                            "are both specified. Only one of -f and -r may be "
+                            "used at a time.\n", infile);
+                }
+            }
             break;
 
             case 'n':
+            if (infile == random_file) {
+                wprintw(app_win, "Warning: The offset (-n) option has been "
+                        "specified together with random device (-r), ignoring.\n");
+            }
             if (offset) {
                 invptr = NULL;
                 number = strtoll(optarg, &invptr, 0);
@@ -371,7 +421,22 @@ static int process_args (int argc, char *argv[], char *fname, off_t *offset)
                     return (ERR);
                 }
             } else {
-                wprintw(app_win, "An internal error has occurred.\n");
+                wprintw(app_win, "Error: An internal data inconsistency has "
+                        "been detected.\n");
+                return (ERR);
+            }
+            break;
+
+            case 'l':
+            invptr = NULL;
+            number = strtoll(optarg, &invptr, 0);
+            if ((NULL == invptr) || isspace(invptr[0]) ||
+                (invptr[0] == '\0')) {
+                pass_len = number;
+            } else {
+                wprintw(app_win,
+                        "Error: The required password length %s is invalid.\n",
+                        optarg);
                 return (ERR);
             }
             break;
@@ -463,19 +528,19 @@ static int process_args (int argc, char *argv[], char *fname, off_t *offset)
                 }
                 /*
                  * Now we need to adjust min_buf_chars using the inequality:
-                 *   2^(min_buf_chars*8) > SYM_TAB_LEN^PASS_LEN
+                 *   2^(min_buf_chars*8) > SYM_TAB_LEN^pass_len
                  * Or, in other words:
-                 *   min_buf_chars > log2(SYM_TAB_LEN^PASS_LEN)/8
+                 *   min_buf_chars > log2(SYM_TAB_LEN^pass_len)/8
                  * Simplifying,
-                 *   min_buf_chars > (PASS_LEN * log2(SYM_TAB_LEN))/8
-                 * Optimizing, since (PASS_LEN / 8) = 3.5,
+                 *   min_buf_chars > (pass_len * log2(SYM_TAB_LEN))/8
+                 * Optimizing, since (pass_len / 8) = 3.5,
                  * (but let the compiler do this)
                  *   min_buf_chars = 3.5 * log2(SYM_TAB_LEN)
                  */
                 if (OK == ret) {
                     complexity
                         = log2l((long double) (ALPHANUM_COUNT + special_count));
-                    complexity *= (long double) (PASS_LEN / 8.0);
+                    complexity *= (long double) (pass_len / 8.0);
                     complexity = ceil(complexity);
                     min_buf_chars = (unsigned int) complexity;
                     if (debug_enabled) {
@@ -537,7 +602,7 @@ int main (int argc, char *argv[])
 {
     FILE *inp = NULL;
     off_t len = 0, offset = 0;
-    unsigned int out_len, fd, ret = ERR;
+    unsigned int out_len, buf_len, is_urandom = 0, fd, ret = ERR;
     char *in_buf, *out_buf, *pass, fname[PATH_MAX+1];
 
     if (OK != term_setup()) {
@@ -568,11 +633,22 @@ int main (int argc, char *argv[])
         secure_exit(1);
     }
 
-    if (get_file_len(fd, &len) != OK) {
-        wprintw(app_win, "Error: Unable to determine the attributes of the "
-                " file %s. Please verify permissions.\n", fname);
-        close(fd);
-        secure_exit(ret);
+    if (strncmp(fname, RANDOM_DEVICE, sizeof(RANDOM_DEVICE)) == 0) {
+        len = (URANDOM_BUF_LEN * pass_len)/ PASS_LEN;
+        buf_len = (URANDOM_BUF_LEN * pass_len)/ PASS_LEN;
+        is_urandom = 1;
+        if (debug_enabled) {
+            wprintw(app_win, "Debug: Using /dev/urandom and buffer length %d.\n",
+                    buf_len);
+        }
+    } else {
+        buf_len = (BUF_LEN * pass_len)/PASS_LEN;
+        if (get_file_len(fd, &len) != OK) {
+            wprintw(app_win, "Error: Unable to determine the attributes of the "
+                    " file %s. Please verify permissions.\n", fname);
+            close(fd);
+            secure_exit(ret);
+        }
     }
 
     inp = fdopen(fd, "rb");
@@ -592,15 +668,15 @@ int main (int argc, char *argv[])
         secure_exit(ret);
     }
 
-    if (((offset + BUF_LEN) < BUF_LEN ) || /* wrapped */
-        (len < (offset + BUF_LEN))) {
+    if (((offset + buf_len) < buf_len ) || /* wrapped */
+        (len < (offset + buf_len))) {
         wprintw(app_win, "Error: File too small or offset too large.\n");
         fclose(inp);
         close(fd);
         secure_exit(ret);
     }
 
-    in_buf = malloc(BUF_LEN);
+    in_buf = malloc(buf_len);
     if (in_buf == NULL) {
         wprintw(app_win, "Error: Insufficient memory.\n");
         fclose(inp);
@@ -608,7 +684,7 @@ int main (int argc, char *argv[])
         secure_exit(ret);
     }
 
-    if (read_file_data(inp, in_buf, offset) != OK) {
+    if (read_file_data(inp, in_buf, buf_len, offset) != OK) {
         wprintw(app_win, "Error: Unable to read from file.\n");
         free(in_buf);
         fclose(inp);
@@ -623,68 +699,75 @@ int main (int argc, char *argv[])
     fclose(inp);
     close(fd);
 
-    out_buf = malloc(BUF_LEN);
-    if (out_buf == NULL) {
-        wprintw(app_win, "Error: Insufficient memory.\n");
-        free(in_buf);
-        secure_exit(ret);
-    }
+    if (is_urandom == 0) {
+        out_buf = malloc(buf_len);
+        if (out_buf == NULL) {
+            wprintw(app_win, "Error: Insufficient memory.\n");
+            free(in_buf);
+            secure_exit(ret);
+        }
 
-    if (compress_data((char *)in_buf, (char *)out_buf, &out_len) != OK) {
-        wprintw(app_win, "Error: Compression failure.\n");
-        free(in_buf);
-        free(out_buf);
-        secure_exit(ret);
-    }
-    
-    if (debug_enabled) {
-        wprintw(app_win, "Debug: Compression ratio is %d:%d.\n", BUF_LEN,
-                out_len);
-    }
+        if (compress_data((char *)in_buf, (char *)out_buf, &out_len) != OK) {
+            wprintw(app_win, "Error: Compression failure.\n");
+            free(in_buf);
+            free(out_buf);
+            secure_exit(ret);
+        }
+        if (debug_enabled) {
+            wprintw(app_win, "Debug: Compression ratio is %d:%d.\n", BUF_LEN,
+                    out_len);
+        }
 
-    if (out_len < min_buf_chars) {
-        wprintw(app_win, "Error: Input file data has insufficient entropy.\n");
-        free(in_buf);
-        free(out_buf);
-        secure_exit(ret);
-    } else if (out_len >= BUF_LEN) {
-        /* input data is incompressible, so let us use it directly */
-        memset(out_buf, 0, BUF_LEN);
-        free(out_buf);
+        if (out_len < min_buf_chars) {
+            wprintw(app_win,
+                    "Error: Input file data has insufficient entropy.\n");
+            free(in_buf);
+            free(out_buf);
+            secure_exit(ret);
+        } else if (out_len >= buf_len) {
+            /* input data is incompressible, so let us use it directly */
+            memset(out_buf, 0, buf_len);
+            free(out_buf);
+            out_buf = in_buf;
+            in_buf  = NULL;
+            out_len = buf_len;
+        } else { /* (out_len >= min_buf_chars) && (out_len < BUF_LEN) */
+            /*
+             * Now that we have the output data, we do not need the input
+             * buffer any more. So clear it now as otherwise the data could
+             * remain in memory until the dirty pages are flushed or reused
+             * by the OS. Of course, the standard output console memory will
+             * retain the password, and there is no way for us to clear that.
+             */
+            memset(in_buf, 0, buf_len);
+            free(in_buf);
+        }
+    } else {
         out_buf = in_buf;
-        in_buf  = NULL;
-        out_len = BUF_LEN;
-    } else { /* (out_len >= min_buf_chars) && (out_len < BUF_LEN) */
-        /*
-         * Now that we have the output data, we don't need the input buffer.
-         * So clear it now as otherwise the data could remain in memory until
-         * the dirty pages are flushed or reused by the OS. Of course, the 
-         * standard output console memory will retain the password, and there
-         * is no way for us to clear that.
-         */
-        memset(in_buf, 0, BUF_LEN);
-        free(in_buf);
+        out_len = buf_len;
+        in_buf = NULL;
     }
 
-    pass = malloc(PASS_LEN + 1);
+
+    pass = malloc(pass_len + 1);
     if (pass == NULL) {
         wprintw(app_win, "Error: Insufficient memory.\n");
     } else {
-        memset(pass, 0, PASS_LEN + 1);
+        memset(pass, 0, pass_len + 1);
         if (generate_pass(out_buf, out_len,
-                          pass, PASS_LEN) == OK) {
+                          pass, pass_len) == OK) {
             wprintw(app_win, "Password: %s\n", pass);
             ret = OK;
         } else {
             wprintw(app_win, "Error: Unable to generate password.\n");
         }
-        memset(pass, 0, PASS_LEN + 1);
+        memset(pass, 0, pass_len + 1);
         free(pass);
     }
 
-    memset(out_buf, 0, BUF_LEN);
+    memset(out_buf, 0, buf_len);
     free(out_buf);
-    
+
     secure_exit(ret);
 
     /* this line is never executed. */
