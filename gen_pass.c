@@ -538,7 +538,7 @@ int main (int argc, char *argv[])
     FILE *inp = NULL;
     off_t len = 0, offset = 0;
     unsigned int out_len, fd, ret = ERR;
-    char *in_buf, *out_buf, *pass, fname[PATH_MAX];
+    char *in_buf, *out_buf, *pass, fname[PATH_MAX+1];
 
     if (OK != term_setup()) {
         fprintf(stderr,
