@@ -1,5 +1,5 @@
 # gen-pass
-gen-pass is a complex password generator for Unix-like systems. As input, it takes a file and optional offset, and it uses this information to generate a complex password. The advantage of this method is that it is possible to regenerate the EXACT same password again using the same file and offset. The file could be a binary such as an executable, photograph, music file or movie. It could be a file publicly available on the web, such as wireshark binary version 2.0.1 for Win64.
+gen-pass is a complex password generator for Unix-like systems. As input, it takes a file and optional offset, and it uses this information to generate a complex password. The advantage of this method is that it is possible to regenerate the EXACT same password again using the same file and offset. The file could be a binary such as an executable, photograph, music file or movie. It could be a file publicly available on the web, such as wireshark binary [version 2.0.1 for Win64](https://www.wireshark.org/download/win64/all-versions/Wireshark-pdb-win64-2.0.1.zip).
 
 ```
 Usage: gen_pass [-v] [-n <offset>] [-a] [-s <code>] <-f <file>|-r>
@@ -9,6 +9,9 @@ Usage: gen_pass [-v] [-n <offset>] [-a] [-s <code>] <-f <file>|-r>
          .. of these options can't be used together.
   -n : Offset within the file.                     [OPTIONAL]
          .. This option can only be used with -f.
+  -l : Generate password of the given length       [OPTIONAL]
+         .. Use this if you need a password longer 
+         .. than the default 29 characters.
   -a : Generate alpha-numeric characters only.     [OPTIONAL]
   -s : Use the special character with the given ASCII
        code, in addition to alpha-numeric characters.
